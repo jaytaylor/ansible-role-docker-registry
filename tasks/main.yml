@@ -8,7 +8,13 @@
     state: directory
   when: 'docker_registry_storage_directory | length > 0'
 
-- name: docker registry | if not exists, copy config.yml to /etc/docker/registry/
+- name: create /etc/docker/registry
+  become: yes
+  file:
+    path: /etc/docker/registry
+    state: directory
+
+- name: if not exists, copy config.yml to /etc/docker/registry/
   become: yes
   copy:
     src: files/etc/docker/registry/config.yml
