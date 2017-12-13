@@ -1,7 +1,7 @@
 ---
 # Setup a Docker registry
 
-- name: docker registry | create storage directory
+- name: create storage directory
   become: yes
   file:
     path: "{{ docker_registry_storage_directory }}"
@@ -24,20 +24,20 @@
     force: no
 
 # Needed for Ansible docker_image module
-- name: docker registry | docker-python
+- name: docker-python
   become: yes
   yum:
     name: docker-python
     state: present
   when: ansible_distribution != "OracleLinux"
 
-- name: docker registry | pull registry image
+- name: pull registry image
   become: yes
   docker_image:
     name: registry:{{ docker_registry_version }}
   when: ansible_distribution != "OracleLinux"
 
-- name: docker registry | check for existing registry docker image
+- name: check for existing registry docker image
   become: yes
   shell: docker images -q registry:{{ docker_registry_version }}
   changed_when: False
@@ -46,12 +46,12 @@
 
 # Note: Oracle Enterprise Linux doesn't come with the python2 yum & rpm bindings
 # required for the docker_image module.
-- name: docker registry | pull registry image
+- name: pull registry image
   become: yes
   shell: docker pull registry:{{ docker_registry_version }}
   when: ansible_distribution == "OracleLinux" and image_check.stdout | length == 0
 
-- name: docker registry | render systemd service template
+- name: render systemd service template
   become: yes
   template:
     src: systemd-system-docker-registry-service.j2
@@ -60,10 +60,36 @@
   notify:
     - restart docker-registry
 
-- name: docker registry | enable systemd service
+- name: enable docker-registry systemd service
   become: yes
   systemd:
     daemon_reload: yes
     name: docker-registry
-    state: started
     enabled: yes
+    state: started
+
+- name: collect state of system services
+  scan_services:
+  register: services_state
+
+- name: start firewalld service
+  become: yes
+  service:
+    name: firewalld
+    state: started
+  register: started_firewalld
+  when: services_state.ansible_facts.services["firewalld.service"] is defined and services_state.ansible_facts.services["firewalld.service"].state != "running"
+
+- name: open port in firewalld
+  # See: http://docs.ansible.com/ansible/latest/firewalld_module.html
+  become: yes
+  shell: firewall-cmd --permanent --zone=public --add-port={{ docker_registry_listen_port }}/tcp
+  when: services_state.ansible_facts.services["firewalld.service"] is defined and services_state.ansible_facts.services["firewalld.service"].state != "running"
+
+- name: restore original firewalld service state
+  become: yes
+  service:
+    name: firewalld
+    state: stopped
+  when: started_firewalld is defined
+
